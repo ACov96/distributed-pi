@@ -36,3 +36,32 @@ class DBLock(Document):
     """
     expirey = DateTimeField(required=True)
     meta = {'max_documents':1}
+
+def db_lock_enter():
+    while True:
+        try:
+            l = DBLock(expirey=(datetime.now() + timedelta(seconds=15)))
+            break
+        except:
+            if DBLock.objects().filter(expirey__lt=datetime.now()).count() != 0:
+                DBLock.drop_collection()
+            else:
+                time.sleep(.1)
+
+def db_lock_leave():
+    DBLock.drop_collection()
+
+class PrioritizedJobs(Document):
+    """
+    One-off jobs that need to be run or re-run for some reason.
+    These jobs will be prioritized above creating new jobs.
+    """
+    digit_index_start = LongField(required=True)
+    digit_index_end = LongField(required=True)
+
+class Base16Render(Document):
+    """
+    Concatenated string of Base16Results instances for a contiguous index region starting at index 1.
+    """
+    render = StringField(required=True)
+    created = DateTimeField(required=True)

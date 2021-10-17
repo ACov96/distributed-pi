@@ -1,46 +1,26 @@
 import os
 import json
-import time
-import threading
 from bottle import get, post, run, request, response
 from datetime import datetime, timedelta
-from common.db_models import Jobs, Base16Results, DBLock
+from common.db_models import Jobs, Base16Results, PrioritizedJobs, db_lock_enter, db_lock_leave
+from common.utils import set_interval
 
 ## Constants
 JOB_TIMEOUT = 30 if 'JOB_TIMEOUT' not in os.environ else os.environ['JOB_TIMEOUT']
 
 ## Helper functions
-def db_lock_enter():
-    while True:
-        try:
-            l = DBLock(expirey=(datetime.now() + timedelta(seconds=15)))
-            break
-        except:
-            if DBLock.objects().filter(expirey__lt=datetime.now()).count() != 0:
-                DBLock.drop_collection()
-            else:
-                time.sleep(.1)
-
-def db_lock_leave():
-    DBLock.drop_collection()
-
-def set_interval(func, sec):
-    def func_wrapper():
-        set_interval(func, sec)
-        func()
-    t = threading.Timer(sec, func_wrapper)
-    t.start()
-    return t
-
 def cleanup_expired_jobs():
     db_lock_enter()
-    Jobs.objects().filter(expirey__lte=datetime.now()).delete()
+    expired_jobs = Jobs.objects().filter(expirey__lte=datetime.now())
+    for job in expired_jobs:
+        for n in range(job.digit_index_start, job.digit_index_end):
+            pj = PrioritizedJobs(digit_index_start=n, digit_index_end=n+1)
+            pj.save()
+    expired_jobs.delete()
     db_lock_leave()
 
-
 ## Helper threads
-# job_cleanup_thread = set_interval(cleanup_expired_jobs, JOB_TIMEOUT)
-
+job_cleanup_thread = set_interval(cleanup_expired_jobs, JOB_TIMEOUT)
 
 ## Routes
 @get('/job-timeout')
@@ -50,35 +30,40 @@ def report_job_timeout():
 
 @post('/request-jobs')
 def request_job():
-    db_lock_enter()
     response.headers['Content-Type'] = 'application/json'
 
     # Compute job expiration time
     now = datetime.now()
     expirey = now + timedelta(seconds=JOB_TIMEOUT)
 
-    # Compute digit index for job to compute
-    # TODO: max_result_digit_index is incorrect because it could potentially skip over any non-contiguous gaps.
-    #       Need to pull from a PriorityQueue document, but that is not currently implemented.
-    num_requested = request.json.get('num_jobs')
-    active_jobs = Jobs.objects().filter(expirey__gt=now).order_by('-digit_index_end')
-    base16_results = Base16Results.objects().order_by('-digit_index')
-
-    if active_jobs.count() == 0:
-        max_active_job_digit_index = 1 
+    db_lock_enter()
+    if PrioritizedJobs.objects.count() != 0:
+        # There is a prioritized job in the queue, send that job instead of generating a new one
+        pj = PrioritizedJobs.objects.first()
+        new_job = Jobs(expirey=expirey, digit_index_start=pj.digit_index_start, digit_index_end=pj.digit_index_end)
+        pj.delete()
     else:
-        max_active_job_digit_index = active_jobs.first().digit_index_end
+        # Generate a new job
+        num_requested = request.json.get('num_jobs')
+        active_jobs = Jobs.objects().filter(expirey__gt=now).order_by('-digit_index_end')
+        base16_results = Base16Results.objects().order_by('-digit_index')
 
-    if base16_results.count() == 0:
-        max_result_digit_index = 0 
-    else: 
-        max_result_digit_index = base16_results.first().digit_index
+        if active_jobs.count() == 0:
+            max_active_job_digit_index = 1 
+        else:
+            max_active_job_digit_index = active_jobs.first().digit_index_end
 
-    next_digit_index_start = max(max_active_job_digit_index, max_result_digit_index + 1)
-    next_digit_index_end = next_digit_index_start + num_requested
+        if base16_results.count() == 0:
+            max_result_digit_index = 0 
+        else: 
+            max_result_digit_index = base16_results.first().digit_index
+
+        next_digit_index_start = max(max_active_job_digit_index, max_result_digit_index + 1)
+        next_digit_index_end = next_digit_index_start + num_requested
+
+        new_job = Jobs(expirey=expirey, digit_index_start=next_digit_index_start, digit_index_end=next_digit_index_end)
 
     # Create the job and send it to the client
-    new_job = Jobs(expirey=expirey, digit_index_start=next_digit_index_start, digit_index_end=next_digit_index_end)
     new_job.save()
     db_lock_leave()
     return [new_job.to_json()]
@@ -114,5 +99,9 @@ def submit_job():
 
 
 ## Run the server
-print("Using job timeout: {} seconds".format(JOB_TIMEOUT))
-run(host='0.0.0.0', port=8080, debug=True)
+def main():
+    print("Using job timeout: {} seconds".format(JOB_TIMEOUT))
+    run(host='0.0.0.0', port=8080, debug=True)
+
+if __name__ == "__main__":
+    main()
