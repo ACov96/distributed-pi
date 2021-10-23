@@ -79,10 +79,9 @@ def worker_loop():
 NUM_WORKERS = int(os.environ.get("NUM_WORKERS", multiprocessing.cpu_count()))
 print("Spawning {} workers".format(NUM_WORKERS))
 workers = []
-for i in range(0, NUM_WORKERS):
+for i in range(0, NUM_WORKERS-1):
     p = multiprocessing.Process(target=worker_loop)
     p.start()
     workers.append(p)
 
-while True:
-    time.sleep(10)
+worker_loop()
