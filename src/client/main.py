@@ -41,8 +41,8 @@ def submit_job(job, digits):
         print("Failed to submit job {}".format(job.get("job_id")))
         pprint(r.content)
         ITEMS_PER_JOB /= 2
-        if ITEMS_PER_JOB <= 0:
-            ITEMS_PER_JOB = 1
+    if ITEMS_PER_JOB <= 0:
+        ITEMS_PER_JOB = 1
 
 ## Estimate throughput
 r = requests.get(JOB_TIMEOUT_URL)
@@ -71,10 +71,13 @@ else:
 
 ## Main work loop
 def worker_loop():
+    global ITEMS_PER_JOB
     while True:
         job = request_job()
         digits = do_job(job)
         submit_job(job, digits)
+        if ITEMS_PER_JOB <= 0:
+            ITEMS_PER_JOB = 1
 
 NUM_WORKERS = int(os.environ.get("NUM_WORKERS", multiprocessing.cpu_count()))
 print("Spawning {} workers".format(NUM_WORKERS))
