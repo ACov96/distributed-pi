@@ -65,6 +65,7 @@ else:
 
     end_time = datetime.now()
     total_time = end_time - start_time
+    item_count = max(item_count, 1)
     print("Optimal throughput is {} items/second ({} total items over {} seconds)".format(int(item_count/total_time.total_seconds()), item_count, total_time.total_seconds()))
     ITEMS_PER_JOB = item_count
 

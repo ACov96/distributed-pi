@@ -1,4 +1,6 @@
 import os
+import time
+from datetime import datetime, timedelta
 from mongoengine import connect, Document, DateTimeField, LongField, StringField
 
 ## Setup database connection
@@ -41,6 +43,7 @@ def db_lock_enter():
     while True:
         try:
             l = DBLock(expirey=(datetime.now() + timedelta(seconds=15)))
+            l.save()
             break
         except:
             if DBLock.objects().filter(expirey__lt=datetime.now()).count() != 0:
@@ -62,6 +65,13 @@ class PrioritizedJobs(Document):
 class Base16Render(Document):
     """
     Concatenated string of Base16Results instances for a contiguous index region starting at index 1.
+    """
+    render = StringField(required=True)
+    created = DateTimeField(required=True)
+
+class Base10Render(Document):
+    """
+    Final Pi result in base 10.
     """
     render = StringField(required=True)
     created = DateTimeField(required=True)

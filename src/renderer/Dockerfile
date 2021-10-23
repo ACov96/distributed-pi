@@ -4,7 +4,7 @@ EXPOSE 8080
 
 RUN apt-get update && apt-get upgrade -y
 
-RUN pip3 install mongoengine bottle
+RUN pip3 install mongoengine bottle tqdm
 
 WORKDIR /app
 
